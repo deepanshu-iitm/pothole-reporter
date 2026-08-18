@@ -645,7 +645,7 @@ async function driveTick() {
   const pos = { ...drive.pos };
   const sinceLastCapture = Date.now() - (drive.lastCapAt || 0);
   if (drive.lastCapPos && distMeters(drive.lastCapPos, pos) < MIN_MOVE_METERS && sinceLastCapture < STILL_CAPTURE_MS) {
-    updateHud(t("holding", { checked: drive.checked, found: drive.found }));
+    updateHud(t("holding", { checked: drive.tally.checked, found: drive.tally.found }));
     return;
   }
   for (const s of drive.foundSpots) {

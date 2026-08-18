@@ -14,6 +14,7 @@ Usage:
 
 Reads OPENAI_API_KEY from the environment or from a .env file in the repo root.
 """
+import utils.session
 import argparse, base64, io, json, os, re, statistics, sys, urllib.request, urllib.error
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
