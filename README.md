@@ -79,10 +79,12 @@ photo attached. You press send there. Canceling the composer leaves the
 report editable and reopenable ("Opened in email" status). Walking works the
 same as driving; there is no accelerometer involved anywhere.
 
-**Storage.** Reports and their (downscaled) photos live in on-device
-IndexedDB and appear in the history list with status chips: Draft, Opened in
-email, Not a pothole. Drive Mode reports group by drive session, with a
-per-drive header showing frames checked and potholes found.
+**Storage.** Reports and their photos live in on-device IndexedDB and appear in
+the history list with status chips: Draft, Opened in email, Not a pothole,
+Outside coverage. Past drives collapse into a single row showing the date,
+potholes found and frames actually checked; tap to expand. Tap any photo to open
+it full screen, pinch to zoom, and swipe or use the arrows to move between
+records without going back to the list.
 
 ## Who receives complaints
 
