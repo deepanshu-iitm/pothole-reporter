@@ -1,5 +1,4 @@
 # Secrets and personal data: never commit
-.env
 reports.db
 photos/
 
@@ -15,3 +14,4 @@ android-app/android/local.properties
 .DS_Store
 eval/images/
 eval/results/
+config.bat

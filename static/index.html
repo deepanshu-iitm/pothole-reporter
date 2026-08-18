@@ -21,7 +21,19 @@
   .card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:12px; margin-bottom:12px; }
   .row { display:flex; gap:10px; align-items:center; }
   .thumb { width:64px; height:64px; object-fit:cover; border-radius:10px; flex:none; }
-  .big-photo { width:100%; max-height:240px; object-fit:cover; border-radius:10px; margin-bottom:10px; }
+  .big-photo { width:100%; max-height:280px; object-fit:contain; background:#000; border-radius:10px; margin-bottom:10px; cursor:zoom-in; }
+  #viewer { position:fixed; inset:0; background:#000; z-index:50; display:flex; align-items:center; justify-content:center; overflow:hidden; touch-action:none; }
+  #viewerImg { max-width:100%; max-height:100%; transform-origin:0 0; will-change:transform; user-select:none; -webkit-user-drag:none; }
+  #viewerClose { position:absolute; top:calc(env(safe-area-inset-top) + 12px); right:12px; background:rgba(255,255,255,.15); color:#fff; font-size:20px; padding:10px 16px; border-radius:12px; }
+  #viewerHint { position:absolute; bottom:calc(env(safe-area-inset-bottom) + 16px); left:0; right:0; text-align:center; color:#9a9ba1; font-size:12px; }
+  .group-head { display:flex; align-items:center; gap:8px; margin:16px 0 6px; cursor:pointer; user-select:none; }
+  .group-head .caret { transition:transform .15s; display:inline-block; }
+  .photo-wrap { position:relative; }
+  .navarrow { position:absolute; top:50%; transform:translateY(-50%); background:rgba(0,0,0,.55); color:#fff;
+              font-size:26px; line-height:1; padding:14px 16px; border-radius:12px; }
+  .navarrow[disabled] { opacity:.25; }
+  .navarrow.prev { left:8px; } .navarrow.next { right:8px; }
+  .group-head.open .caret { transform:rotate(90deg); }
   .chip { font-size:11px; font-weight:700; padding:3px 8px; border-radius:99px; display:inline-block; }
   .chip.draft { background:#332a12; color:#ffca66; }
   .chip.sent { background:#12331d; color:#7ce8a2; }
@@ -126,6 +138,12 @@
     </div>
   </div>
 
+  <div id="viewer" class="hidden">
+    <img id="viewerImg" alt="">
+    <button id="viewerClose">&times;</button>
+    <div id="viewerHint"></div>
+  </div>
+
 <script src="standalone.js"></script>
 <script>
 const $ = (id) => document.getElementById(id);
@@ -151,6 +169,9 @@ const I18N = {
     chip_draft: "Draft", chip_sent: "Sent", chip_queued: "Opened in email", chip_rejected: "Not a pothole",
     chip_unrouted: "Outside coverage",
     review_btn: "Review and label frames", export_btn: "Export labelled dataset",
+    zoom_hint: "Pinch to zoom &middot; drag to pan &middot; double tap to reset",
+    drive_group: "{date} &middot; {found} &middot; {checked} frames checked",
+    drive_group_partial: "{date} &middot; {found} &middot; {kept} kept",
     lbl_yes: "Pothole", lbl_no: "Not a pothole", lbl_skip: "Skip", lbl_done: "Done",
     review_empty: "Nothing left to label. Drive with debug mode on to collect frames.",
     review_progress: "{n} left to label &middot; {done} labelled so far",
@@ -209,6 +230,9 @@ const I18N = {
     chip_draft: "ಡ್ರಾಫ್ಟ್", chip_sent: "ಕಳುಹಿಸಲಾಗಿದೆ", chip_queued: "ಇಮೇಲ್‌ನಲ್ಲಿ ತೆರೆಯಲಾಗಿದೆ", chip_rejected: "ಗುಂಡಿ ಅಲ್ಲ",
     chip_unrouted: "ವ್ಯಾಪ್ತಿಯ ಹೊರಗೆ",
     review_btn: "ಫ್ರೇಮ್‌ಗಳನ್ನು ಪರಿಶೀಲಿಸಿ ಮತ್ತು ಗುರುತಿಸಿ", export_btn: "ಗುರುತಿಸಿದ ಡೇಟಾಸೆಟ್ ರಫ್ತು ಮಾಡಿ",
+    zoom_hint: "ಜೂಮ್‌ಗೆ ಪಿಂಚ್ &middot; ಸರಿಸಲು ಎಳೆಯಿರಿ &middot; ಮರುಹೊಂದಿಸಲು ಡಬಲ್ ಟ್ಯಾಪ್",
+    drive_group: "{date} &middot; {found} &middot; {checked} ಫ್ರೇಮ್ ಪರಿಶೀಲನೆ",
+    drive_group_partial: "{date} &middot; {found} &middot; {kept} ಉಳಿಸಲಾಗಿದೆ",
     lbl_yes: "ಗುಂಡಿ", lbl_no: "ಗುಂಡಿ ಅಲ್ಲ", lbl_skip: "ಬಿಟ್ಟುಬಿಡಿ", lbl_done: "ಮುಗಿಯಿತು",
     review_empty: "ಗುರುತಿಸಲು ಏನೂ ಉಳಿದಿಲ್ಲ. ಡೀಬಗ್ ಮೋಡ್ ಆನ್ ಮಾಡಿ ಡ್ರೈವ್ ಮಾಡಿ.",
     review_progress: "{n} ಬಾಕಿ &middot; {done} ಗುರುತಿಸಲಾಗಿದೆ",
@@ -324,6 +348,9 @@ async function loadReports() {
         <div class="meta">${fmtDate(r.created_at)}${r.address ? " &middot; " + r.address.split(",").slice(0, 2).join(", ") : ""}</div>
       </div>
     </div>`;
+  const drives = await api("/api/drives").catch(() => []);
+  const driveById = {};
+  for (const d of drives) driveById[String(d.id)] = d;
   // Group consecutive records from the same drive session under one header.
   const groups = [];
   for (const r of reports) {
@@ -334,12 +361,31 @@ async function loadReports() {
   list.innerHTML = groups.map((g) => {
     const cards = g.items.map(cardHtml).join("");
     if (!g.driveId) return cards;
-    const found = g.items.filter((x) => x.status === "draft" || x.status === "queued" || x.status === "sent").length;
+    const rec = driveById[String(g.driveId)];
+    const stored = g.items.filter((x) => x.status === "draft" || x.status === "queued" || x.status === "sent").length;
+    const found = rec ? rec.found : stored;
     const start = g.items[g.items.length - 1].created_at;
-    return `<div class="meta" style="margin:16px 0 6px;font-weight:600">${t("group_header", { date: fmtDate(start), frames: g.items.length, found })}</div>` + cards;
+    const foundTxt = found === 1 ? t("potholes_one", { n: 1 }) : t("potholes_many", { n: found });
+    // "frames checked" is only known from the drive record: rejected frames are not
+    // stored unless debug mode is on, so older drives can only report what was kept.
+    const label = rec
+      ? t("drive_group", { date: fmtDate(start), found: foundTxt, checked: rec.checked })
+      : t("drive_group_partial", { date: fmtDate(start), found: foundTxt, kept: g.items.length });
+    const open = expandedDrives.has(String(g.driveId));
+    return `<div class="group-head ${open ? "open" : ""}" data-drive="${g.driveId}">
+        <span class="caret">&#9656;</span><span class="meta" style="font-weight:600;color:#f2f2f4">${label}</span>
+      </div>` + (open ? cards : "");
   }).join("");
+  for (const el of list.querySelectorAll("[data-drive]")) {
+    el.onclick = () => {
+      const id = el.dataset.drive;
+      if (expandedDrives.has(id)) expandedDrives.delete(id); else expandedDrives.add(id);
+      loadReports();
+    };
+  }
+  const visible = groups.flatMap((g) => (!g.driveId || expandedDrives.has(String(g.driveId))) ? g.items : []);
   for (const el of list.querySelectorAll("[data-id]")) {
-    el.onclick = () => openDetail(reports.find(r => r.id == el.dataset.id));
+    el.onclick = () => openDetail(visible.find(r => r.id == el.dataset.id), visible);
   }
 }
 
@@ -374,14 +420,42 @@ async function handleFile(file) {
   }
 }
 
-function openDetail(r) {
+let detailList = [], detailIdx = -1;
+
+function photoBlock(r) {
+  const many = detailList.length > 1;
+  return `<div class="photo-wrap">
+      <img class="big-photo" src="${r.photo_url}" alt="" data-zoom="${r.id}">
+      ${many ? `<button class="navarrow prev" id="navPrev" ${detailIdx <= 0 ? "disabled" : ""}>&lsaquo;</button>
+      <button class="navarrow next" id="navNext" ${detailIdx >= detailList.length - 1 ? "disabled" : ""}>&rsaquo;</button>` : ""}
+    </div>`;
+}
+
+function wireDetailChrome(r) {
+  const img = $("detail").querySelector("[data-zoom]");
+  if (img) img.onclick = () => openViewer(r);
+  const prev = $("navPrev"), next = $("navNext");
+  if (prev) prev.onclick = () => step(-1);
+  if (next) next.onclick = () => step(1);
+}
+
+function step(delta) {
+  const i = detailIdx + delta;
+  if (i < 0 || i >= detailList.length) return;
+  openDetail(detailList[i], detailList);
+}
+
+function openDetail(r, list) {
+  if (list) { detailList = list; detailIdx = list.findIndex((x) => x.id === r.id); }
+  else if (!detailList.some((x) => x.id === r.id)) { detailList = [r]; detailIdx = 0; }
+  else detailIdx = detailList.findIndex((x) => x.id === r.id);
   const d = $("detail");
   if (r.status === "unrouted") {
     // A confirmed pothole the app cannot address. It says so rather than sending the
     // complaint to a body with no jurisdiction there.
     d.innerHTML = `
       <div class="card">
-        <img class="big-photo" src="${r.photo_url}" alt="">
+        ${photoBlock(r)}
         <div class="verdict" style="color:var(--accent)">
           ${t("verdict_detected", { size: tSize(r.size).toUpperCase(), pct: (r.confidence * 100).toFixed(0) })}
         </div>
@@ -396,7 +470,7 @@ function openDetail(r) {
   } else if (r.status === "rejected") {
     d.innerHTML = `
       <div class="card">
-        <img class="big-photo" src="${r.photo_url}" alt="">
+        ${photoBlock(r)}
         <div class="verdict" style="color:var(--bad)">${t("verdict_rejected")}</div>
         <div class="meta">${r.description || ""} (${t("confidence")} ${(r.confidence * 100).toFixed(0)}%)</div>
         <div class="btn-row">
@@ -414,7 +488,7 @@ function openDetail(r) {
       : t("verdict_detected", { size: tSize(r.size).toUpperCase(), pct: (r.confidence * 100).toFixed(0) });
     d.innerHTML = `
       <div class="card">
-        <img class="big-photo" src="${r.photo_url}" alt="">
+        ${photoBlock(r)}
         <div class="verdict" style="color:${sent ? "var(--ok)" : "var(--accent)"}">
           ${verdictText}
         </div>
@@ -435,6 +509,7 @@ function openDetail(r) {
     $("body").value = r.email_body || "";
     if (!sent) $("sendBtn").onclick = () => sendReport(r);
   }
+  wireDetailChrome(r);
   $("backBtn").onclick = () => { show("home"); loadReports(); };
   const discard = $("discardBtn");
   if (discard) discard.onclick = async () => {
@@ -616,6 +691,7 @@ function stopDrive() {
   // Frames already sent are not cancelled: those reports get saved regardless.
   // So the summary waits for them, or it would under-report the last stretch of road.
   const tally = drive.tally, pending = drive.pending.slice();
+  const sessionId = drive.sessionId, startedAt = drive.startedAt;
   const hadActivity = tally.checked > 0 || tally.found > 0 || drive.inFlight > 0;
   clearInterval(drive.timer);
   navigator.geolocation.clearWatch(drive.watchId);
@@ -626,7 +702,12 @@ function stopDrive() {
   loadReports();
   if (!hadActivity) return;
   const finish = () => {
-    loadReports();
+    // Record what the drive actually checked. Rejected frames are not stored unless
+    // debug mode is on, so without this the history header can only count survivors.
+    api("/api/drives", { method: "POST", body: JSON.stringify(
+      { id: sessionId, started_at: startedAt / 1000, checked: tally.checked, found: tally.found }) })
+      .catch(() => {})
+      .then(loadReports);
     const summary = tally.found === 0
       ? t("drive_end_zero", { checked: tally.checked, debug: localStorage.getItem("debug_mode") === "1" ? t("debug_saved_suffix") : "" })
       : t("drive_end", { found: tally.found === 1 ? t("potholes_one", { n: 1 }) : t("potholes_many", { n: tally.found }), checked: tally.checked });
@@ -658,6 +739,7 @@ $("captureBtn").onclick = () => { StandaloneAPI.prewarm(); $("fileInput").click(
 // verdict is shown but deliberately after the photo, so it nudges the eye as little
 // as possible: an unlabelled frame is worth more than one labelled by suggestion.
 let reviewQueue = [], reviewDone = 0;
+const expandedDrives = new Set();
 
 async function startReview() {
   const all = await api("/api/reports");
@@ -689,7 +771,84 @@ async function labelCurrent(label) {
   nextReviewFrame();
 }
 
+// ---------- full-screen photo viewer ----------
+// The detail card can only ever show a thumbnail of a 4000px capture, which is no
+// use for judging a pothole or labelling one. Pinch, pan, and step between records
+// without going back to the list.
+let vState = { scale: 1, x: 0, y: 0, rec: null }, vPointers = new Map(), vStart = null, vLastTap = 0;
+
+function vApply() {
+  $("viewerImg").style.transform =
+    `translate(${vState.x}px, ${vState.y}px) scale(${vState.scale})`;
+}
+function vReset() { vState.scale = 1; vState.x = 0; vState.y = 0; vApply(); }
+
+function openViewer(r) {
+  vState.rec = r;
+  $("viewerImg").src = r.photo_url;
+  $("viewerHint").innerHTML = t("zoom_hint");
+  vReset();
+  $("viewer").classList.remove("hidden");
+}
+function closeViewer() { $("viewer").classList.add("hidden"); vState.rec = null; }
+
+function viewerStep(delta) {
+  if (detailList.length < 2) return;
+  const i = detailIdx + delta;
+  if (i < 0 || i >= detailList.length) return;
+  detailIdx = i;
+  const r = detailList[i];
+  openDetail(r, detailList);          // keep the card behind the viewer in sync
+  openViewer(r);
+}
+
+(function wireViewer() {
+  const v = $("viewer"), img = $("viewerImg");
+  $("viewerClose").onclick = closeViewer;
+  v.addEventListener("pointerdown", (e) => {
+    vPointers.set(e.pointerId, e);
+    if (vPointers.size === 1) {
+      const now = Date.now();
+      if (now - vLastTap < 300) { vState.scale > 1 ? vReset() : (vState.scale = 2.5, vApply()); }
+      vLastTap = now;
+      vStart = { x: e.clientX - vState.x, y: e.clientY - vState.y };
+    } else if (vPointers.size === 2) {
+      const [a, b] = [...vPointers.values()];
+      vStart = { dist: Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY), scale: vState.scale };
+    }
+  });
+  v.addEventListener("pointermove", (e) => {
+    if (!vPointers.has(e.pointerId)) return;
+    vPointers.set(e.pointerId, e);
+    if (vPointers.size === 2 && vStart && vStart.dist) {
+      const [a, b] = [...vPointers.values()];
+      const d = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+      vState.scale = Math.min(8, Math.max(1, vStart.scale * (d / vStart.dist)));
+      if (vState.scale === 1) { vState.x = 0; vState.y = 0; }
+      vApply();
+    } else if (vPointers.size === 1 && vStart && vState.scale > 1) {
+      vState.x = e.clientX - vStart.x;
+      vState.y = e.clientY - vStart.y;
+      vApply();
+    }
+  });
+  const end = (e) => {
+    const was = vPointers.get(e.pointerId);
+    vPointers.delete(e.pointerId);
+    // A flick while not zoomed moves to the next record rather than panning nothing.
+    if (was && vState.scale === 1 && vStart && !vStart.dist && vPointers.size === 0) {
+      const dx = e.clientX - (vStart.x + vState.x);
+      if (Math.abs(dx) > 60) viewerStep(dx < 0 ? 1 : -1);
+    }
+    if (!vPointers.size) vStart = null;
+  };
+  v.addEventListener("pointerup", end);
+  v.addEventListener("pointercancel", end);
+  img.addEventListener("click", (e) => e.stopPropagation());
+})();
+
 $("reviewBtn").onclick = startReview;
+$("reviewPhoto").onclick = () => { if (reviewQueue[0]) openViewer(reviewQueue[0]); };
 $("lblYes").onclick = () => labelCurrent("pothole");
 $("lblNo").onclick = () => labelCurrent("not_pothole");
 $("lblSkip").onclick = () => labelCurrent(null);
@@ -742,6 +901,7 @@ window.addEventListener("pipeline-verdict", (e) => {
 // Drive mode stops; any other screen returns home; home lets the app exit.
 window.handleAppBack = () => {
   if (drive) { stopDrive(); return true; }
+  if (!$("viewer").classList.contains("hidden")) { closeViewer(); return true; }
   for (const s of ["detail", "settings", "progress", "drive", "review"]) {
     if (!$(s).classList.contains("hidden")) { show("home"); loadReports(); return true; }
   }

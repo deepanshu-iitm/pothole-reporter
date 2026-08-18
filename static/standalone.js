@@ -397,15 +397,22 @@ ${S.name}`;
   function idb() {
     return new Promise((resolve, reject) => {
       if (_db) return resolve(_db);
-      const req = indexedDB.open("potholes", 1);
-      req.onupgradeneeded = () => req.result.createObjectStore("reports", { keyPath: "id", autoIncrement: true });
+      const req = indexedDB.open("potholes", 2);
+      req.onupgradeneeded = () => {
+        const d = req.result;
+        if (!d.objectStoreNames.contains("reports")) d.createObjectStore("reports", { keyPath: "id", autoIncrement: true });
+        // How many frames a drive actually checked is only known while it runs:
+        // rejected frames are not kept unless debug mode is on, so the count has to
+        // be recorded at the end or it is lost.
+        if (!d.objectStoreNames.contains("drives")) d.createObjectStore("drives", { keyPath: "id" });
+      };
       req.onsuccess = () => { _db = req.result; resolve(_db); };
       req.onerror = () => reject(req.error);
     });
   }
-  function op(mode, fn) {
+  function op(mode, fn, storeName = "reports") {
     return idb().then((d) => new Promise((resolve, reject) => {
-      const store = d.transaction("reports", mode).objectStore("reports");
+      const store = d.transaction(storeName, mode).objectStore(storeName);
       const req = fn(store);
       req.onsuccess = () => resolve(req.result);
       req.onerror = () => reject(req.error);
@@ -416,6 +423,8 @@ ${S.name}`;
   const putReport = (r) => op("readwrite", (s) => s.put(r));
   const addReport = (r) => op("readwrite", (s) => s.add(r));
   const delReport = (id) => op("readwrite", (s) => s.delete(Number(id)));
+  const allDrives = () => op("readonly", (s) => s.getAll(), "drives");
+  const putDrive = (d) => op("readwrite", (s) => s.put(d), "drives");
 
   const toDict = (r) => ({ ...r, photo_url: r.photo });
 
@@ -666,6 +675,15 @@ ${S.name}`;
     }
     if (path === "/api/reports" && method === "DELETE") {
       await op("readwrite", (s) => s.clear());
+      await op("readwrite", (s) => s.clear(), "drives");
+      return { ok: true };
+    }
+    if (path === "/api/drives" && method === "GET") return allDrives();
+    if (path === "/api/drives" && method === "POST") {
+      const d = JSON.parse(opts.body);
+      if (!d || !d.id) throw new Error("Drive id missing.");
+      await putDrive({ id: String(d.id), started_at: d.started_at || null,
+                       ended_at: Date.now() / 1000, checked: d.checked | 0, found: d.found | 0 });
       return { ok: true };
     }
     if (path === "/api/export" && method === "POST") return exportDataset();
